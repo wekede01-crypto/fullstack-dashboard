@@ -2,40 +2,43 @@ const express = require('express');
 const mysql = require('mysql2');
 const mongoose = require('mongoose');
 const cors = require('cors');
+require('dotenv').config(); // 允许读取本地 .env 文件 (虽然我们这次主要靠云端注入)
 
 const app = express();
 
-//中间件配置
-app.use(cors()); // 允许跨域
-app.use(express.json()); // 【关键新增】让服务器能读懂前端发来的 JSON 数据
+app.use(cors());
+app.use(express.json());
 
 // ===========================
-// 1. MySQL 连接配置 (技能数据)
+// 1. MySQL 连接配置 (云端/本地自适应)
 // ===========================
 const mysqlConnection = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: 'root', // 你的数据库密码
-    database: 'my_fullstack_journey'
+    host: process.env.MYSQL_HOST || 'localhost',
+    user: process.env.MYSQL_USER || 'root',
+    password: process.env.MYSQL_PASSWORD || 'root',
+    database: process.env.MYSQL_DATABASE || 'my_fullstack_journey',
+    port: process.env.MYSQL_PORT || 3306
 });
 
 mysqlConnection.connect(err => {
-    if (err) console.error('❌ MySQL 连接失败:', err);
-    else console.log('✅ MySQL 连接成功');
+    if (err) {
+        console.error('❌ MySQL 连接失败 (请检查账号密码):', err.message);
+    } else {
+        console.log('✅ MySQL 连接成功');
+    }
 });
 
 // ===========================
-// 2. MongoDB 连接配置 (新闻数据)
+// 2. MongoDB 连接配置 (云端/本地自适应)
 // ===========================
-mongoose.connect('mongodb://localhost:27017/my_fullstack_journey');
+// 如果云端提供了 MONGO_URI 就用云端的，否则用本地的
+const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/my_fullstack_journey';
 
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, '❌ MongoDB 连接错误:'));
-db.once('open', function() {
-  console.log('✅ MongoDB 连接成功');
-});
+mongoose.connect(mongoURI)
+    .then(() => console.log('✅ MongoDB 连接成功'))
+    .catch(err => console.error('❌ MongoDB 连接失败:', err));
 
-// 定义新闻的数据模型 (Schema)
+// 定义新闻模型
 const newsSchema = new mongoose.Schema({
     title: String,
     tag: String,
@@ -46,10 +49,13 @@ const newsSchema = new mongoose.Schema({
 const NewsModel = mongoose.model('News', newsSchema);
 
 // ===========================
-// 3. API 接口定义
+// 3. API 接口
 // ===========================
 
-// 接口 A: 获取所有技能 (GET)
+app.get('/', (req, res) => {
+    res.send('🚀 全栈后端服务器正在运行!');
+});
+
 app.get('/api/skills', (req, res) => {
     mysqlConnection.query('SELECT * FROM skills', (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -57,29 +63,15 @@ app.get('/api/skills', (req, res) => {
     });
 });
 
-// 接口 B: 添加新技能 (POST) --- 【这是这次新增的接口】
 app.post('/api/skills', (req, res) => {
-    // 从前端发来的请求体里拿到数据
     const { tool_name, category, status } = req.body;
-    
-    // 准备 SQL 插入语句
     const sql = 'INSERT INTO skills (tool_name, category, status) VALUES (?, ?, ?)';
-    
-    // 执行插入
     mysqlConnection.query(sql, [tool_name, category, status], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
-        
-        // 成功后，返回新生成的数据（包含刚生成的 ID）
-        res.json({ 
-            id: result.insertId, 
-            tool_name, 
-            category, 
-            status 
-        });
+        res.json({ id: result.insertId, tool_name, category, status });
     });
 });
 
-// 接口 C: 获取新闻 (GET)
 app.get('/api/news', async (req, res) => {
     try {
         const news = await NewsModel.find();
@@ -89,7 +81,10 @@ app.get('/api/news', async (req, res) => {
     }
 });
 
-// 启动服务器
-app.listen(3000, () => {
-    console.log('🚀 全栈服务器已启动: http://localhost:3000');
+// 监听端口 (云端通常会指定 PORT 环境变量)
+const PORT = process.env.PORT || 3306; 
+// 修正：这里一般 Web 服务用 3000 或 8080，但为了兼容之前的 client 代码，我们先保持 3000
+// 真正的云服务会自动分配端口到 process.env.PORT
+app.listen(process.env.PORT || 3000, () => {
+    console.log(`🚀 服务器运行在端口: ${process.env.PORT || 3000}`);
 });
