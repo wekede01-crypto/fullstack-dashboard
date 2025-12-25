@@ -1,19 +1,20 @@
 {
   "name": "fullstack-dashboard",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "My Fullstack Journey",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.11.0",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^5.2.1",
-    "mongoose": "^9.0.2",
-    "mysql2": "^3.16.0"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.3.0",
+    "mysql2": "^3.9.3"
   }
 }
