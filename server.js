@@ -1,90 +1,112 @@
 const express = require('express');
-const mysql = require('mysql2');
-const mongoose = require('mongoose');
+const mysql = require('mysql2/promise');
 const cors = require('cors');
-require('dotenv').config(); // 允许读取本地 .env 文件 (虽然我们这次主要靠云端注入)
+const mongoose = require('mongoose');
+require('dotenv').config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// 中间件配置
+app.use(cors()); // 允许跨域
+app.use(express.json()); // 解析 JSON 请求体
 
-// ===========================
-// 1. MySQL 连接配置 (云端/本地自适应)
-// ===========================
-const mysqlConnection = mysql.createConnection({
-    host: process.env.MYSQL_HOST || 'localhost',
-    user: process.env.MYSQL_USER || 'root',
-    password: process.env.MYSQL_PASSWORD || 'root',
-    database: process.env.MYSQL_DATABASE || 'my_fullstack_journey',
-    port: process.env.MYSQL_PORT || 3306
+// === 1. MySQL 数据库连接池 ===
+const pool = mysql.createPool({
+  host: process.env.MYSQL_HOST || 'sjc1.clusters.zeabur.com',
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWORD, // 这里的密码会从 .env 文件或 Zeabur 环境变量里读取
+  database: process.env.MYSQL_DATABASE || 'zeabur',
+  port: process.env.MYSQL_PORT || 21007,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
-mysqlConnection.connect(err => {
-    if (err) {
-        console.error('❌ MySQL 连接失败 (请检查账号密码):', err.message);
-    } else {
-        console.log('✅ MySQL 连接成功');
-    }
-});
-
-// ===========================
-// 2. MongoDB 连接配置 (云端/本地自适应)
-// ===========================
-// 如果云端提供了 MONGO_URI 就用云端的，否则用本地的
-const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/my_fullstack_journey';
-
-mongoose.connect(mongoURI)
+// === 2. MongoDB 数据库连接 ===
+// 如果环境变量里配置了 MONGO_URI 才会尝试连接
+if (process.env.MONGO_URI) {
+    mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ MongoDB 连接成功'))
     .catch(err => console.error('❌ MongoDB 连接失败:', err));
+}
 
-// 定义新闻模型
+// 定义 MongoDB News 模型
 const newsSchema = new mongoose.Schema({
-    title: String,
-    tag: String,
-    date: String,
-    summary: String
-}, { collection: 'tech_news' });
+  title: String,
+  summary: String,
+  tag: String,
+  date: String
+});
+const News = mongoose.model('News', newsSchema);
 
-const NewsModel = mongoose.model('News', newsSchema);
 
-// ===========================
-// 3. API 接口
-// ===========================
+// === 3. API 路由定义 ===
 
+// 根目录：健康检查
 app.get('/', (req, res) => {
-    res.send('🚀 全栈后端服务器正在运行!');
+  res.send('🚀 全栈后端服务器正在运行!');
 });
 
-app.get('/api/skills', (req, res) => {
-    mysqlConnection.query('SELECT * FROM skills', (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(results);
-    });
+// [GET] 获取所有技能
+app.get('/api/skills', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM skills');
+    res.json(rows);
+  } catch (err) {
+    console.error("查询失败:", err);
+    res.status(500).json({ error: '数据库查询失败' });
+  }
 });
 
-app.post('/api/skills', (req, res) => {
+// [POST] 添加新技能
+app.post('/api/skills', async (req, res) => {
+  try {
     const { tool_name, category, status } = req.body;
-    const sql = 'INSERT INTO skills (tool_name, category, status) VALUES (?, ?, ?)';
-    mysqlConnection.query(sql, [tool_name, category, status], (err, result) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: result.insertId, tool_name, category, status });
-    });
+    const [result] = await pool.query(
+      'INSERT INTO skills (tool_name, category, status) VALUES (?, ?, ?)',
+      [tool_name, category, status]
+    );
+    // 返回新添加的数据（包含生成的 ID）
+    res.json({ id: result.insertId, tool_name, category, status });
+  } catch (err) {
+    console.error("添加失败:", err);
+    res.status(500).json({ error: '添加失败' });
+  }
 });
 
+// ⭐⭐⭐ [DELETE] 删除技能 (新增部分) ⭐⭐⭐
+app.delete('/api/skills/:id', async (req, res) => {
+  try {
+    const { id } = req.params; // 获取 URL 里的 id (例如 /api/skills/5 中的 5)
+    
+    // 执行 SQL 删除命令
+    await pool.query('DELETE FROM skills WHERE id = ?', [id]);
+    
+    console.log(`已删除 ID 为 ${id} 的技能`);
+    // 告诉前端：任务完成
+    res.json({ message: '删除成功', id: id });
+  } catch (err) {
+    console.error("删除失败:", err);
+    res.status(500).json({ error: '删除失败' });
+  }
+});
+
+// [GET] 获取 MongoDB 新闻
 app.get('/api/news', async (req, res) => {
-    try {
-        const news = await NewsModel.find();
-        res.json(news);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+  try {
+    if (mongoose.connection.readyState !== 1) {
+        return res.json([]); // 如果没连上 Mongo，返回空数组
     }
+    const news = await News.find().sort({ _id: -1 }).limit(10);
+    res.json(news);
+  } catch (err) {
+    console.error("MongoDB 查询失败:", err);
+    res.status(500).json({ error: 'MongoDB 查询失败' });
+  }
 });
 
-// 监听端口 (云端通常会指定 PORT 环境变量)
-const PORT = process.env.PORT || 3306; 
-// 修正：这里一般 Web 服务用 3000 或 8080，但为了兼容之前的 client 代码，我们先保持 3000
-// 真正的云服务会自动分配端口到 process.env.PORT
-app.listen(process.env.PORT || 3000, () => {
-    console.log(`🚀 服务器运行在端口: ${process.env.PORT || 3000}`);
+// === 4. 启动服务器 ===
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`🚀 服务器运行在端口: ${PORT}`);
 });

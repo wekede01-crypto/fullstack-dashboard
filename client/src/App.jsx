@@ -8,21 +8,27 @@ function App() {
   const [news, setNews] = useState([])     
   const [newSkill, setNewSkill] = useState("") 
 
-  // === ✅ 关键修改：已更新为你成功的 Zeabur 云端地址 ===
-  const API_URL = "https://fullstack-dashboard-wekede.zeabur.app";
+  // === ⚠️ 确认你的后端地址 ===
+  // 如果你在本地测试，可以用 "http://localhost:8080"
+  // 如果要发布上线，请保持这个 Zeabur 的地址
+  // const API_URL = "https://fullstack-dashboard-wekede.zeabur.app"; // 先注释掉云端的
+// === ⚠️ 上线前必须切回云端地址 ===
+  // const API_URL = "http://localhost:8080"; // ❌ 本地测试用完注释掉
+  const API_URL = "https://fullstack-dashboard-wekede.zeabur.app"; // ✅ 上线必须用这个
 
   useEffect(() => {
-    // 1. 找云端后端拿 MySQL 的数据
+    // 1. 找后端拿 MySQL 的数据
     axios.get(`${API_URL}/api/skills`)
       .then(res => setSkills(res.data))
       .catch(err => console.error("MySQL连接失败:", err))
 
-    // 2. 找云端后端拿 MongoDB 的数据
+    // 2. 找后端拿 MongoDB 的数据
     axios.get(`${API_URL}/api/news`)
       .then(res => setNews(res.data))
       .catch(err => console.error("MongoDB连接失败:", err))
   }, [])
 
+  // === 添加技能函数 ===
   const handleAddSkill = () => {
     if (!newSkill.trim()) return; 
 
@@ -40,6 +46,21 @@ function App() {
       console.error(err);
       alert("添加失败! 请检查网络或后端状态。");
     })
+  }
+
+  // === ⭐⭐⭐ 新增：删除技能函数 ⭐⭐⭐ ===
+  const handleDelete = (id) => {
+    // 发送 DELETE 请求给后端
+    axios.delete(`${API_URL}/api/skills/${id}`)
+      .then(() => {
+        // 后端删除成功后，我们在前端也把这一项移除
+        // 过滤掉那个刚刚被删的 id
+        setSkills(skills.filter(skill => skill.id !== id));
+      })
+      .catch(err => {
+        console.error("删除失败:", err);
+        alert("删除失败，请检查网络");
+      });
   }
 
   // ... 渲染部分 ...
@@ -92,19 +113,44 @@ function App() {
           </h2>
           <ul style={{ listStyle: 'none', padding: 0 }}>
             {skills.length === 0 ? <p style={{color: '#666'}}>正在从云端加载...</p> : skills.map(skill => (
+              
+              // === ⭐⭐⭐ 修改了这里：给 li 添加了删除按钮 ⭐⭐⭐ ===
               <li key={skill.id} style={{ background: 'white', margin: '10px 0', padding: '15px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <strong style={{ fontSize: '1.1rem' }}>{skill.tool_name}</strong>
-                <span style={{ 
-                  color: skill.status === 'Running' ? 'green' : '#f57c00', 
-                  fontWeight: 'bold',
-                  background: skill.status === 'Running' ? '#e8f5e9' : '#fff3e0',
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  fontSize: '0.8rem'
-                }}> 
-                  {skill.status}
-                </span>
+                {/* 左边的文字部分 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <strong style={{ fontSize: '1.1rem' }}>{skill.tool_name}</strong>
+                  <span style={{ 
+                    color: skill.status === 'Running' ? 'green' : '#f57c00', 
+                    fontWeight: 'bold',
+                    background: skill.status === 'Running' ? '#e8f5e9' : '#fff3e0',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem'
+                  }}> 
+                    {skill.status}
+                  </span>
+                </div>
+
+                {/* 右边的删除按钮 */}
+                <button 
+                  onClick={() => handleDelete(skill.id)}
+                  style={{
+                    background: '#ffcdd2',
+                    color: '#c62828',
+                    border: 'none',
+                    padding: '5px 10px',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    marginLeft: '10px',
+                    fontSize: '0.8rem'
+                  }}
+                  title="从数据库删除"
+                >
+                  删除
+                </button>
               </li>
+
             ))}
           </ul>
         </div>
