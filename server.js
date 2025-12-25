@@ -14,7 +14,7 @@ app.use(express.json()); // 解析 JSON 请求体
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || 'sjc1.clusters.zeabur.com',
   user: process.env.MYSQL_USER || 'root',
-  password: process.env.MYSQL_PASSWORD, // 这里的密码会从 .env 文件或 Zeabur 环境变量里读取
+  password: process.env.MYSQL_PASSWORD, // 从 .env 文件读取密码
   database: process.env.MYSQL_DATABASE || 'zeabur',
   port: process.env.MYSQL_PORT || 21007,
   waitForConnections: true,
@@ -23,7 +23,6 @@ const pool = mysql.createPool({
 });
 
 // === 2. MongoDB 数据库连接 ===
-// 如果环境变量里配置了 MONGO_URI 才会尝试连接
 if (process.env.MONGO_URI) {
     mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ MongoDB 连接成功'))
@@ -66,7 +65,6 @@ app.post('/api/skills', async (req, res) => {
       'INSERT INTO skills (tool_name, category, status) VALUES (?, ?, ?)',
       [tool_name, category, status]
     );
-    // 返回新添加的数据（包含生成的 ID）
     res.json({ id: result.insertId, tool_name, category, status });
   } catch (err) {
     console.error("添加失败:", err);
@@ -74,16 +72,12 @@ app.post('/api/skills', async (req, res) => {
   }
 });
 
-// ⭐⭐⭐ [DELETE] 删除技能 (新增部分) ⭐⭐⭐
+// [DELETE] 删除技能
 app.delete('/api/skills/:id', async (req, res) => {
   try {
-    const { id } = req.params; // 获取 URL 里的 id (例如 /api/skills/5 中的 5)
-    
-    // 执行 SQL 删除命令
+    const { id } = req.params;
     await pool.query('DELETE FROM skills WHERE id = ?', [id]);
-    
     console.log(`已删除 ID 为 ${id} 的技能`);
-    // 告诉前端：任务完成
     res.json({ message: '删除成功', id: id });
   } catch (err) {
     console.error("删除失败:", err);
@@ -91,11 +85,32 @@ app.delete('/api/skills/:id', async (req, res) => {
   }
 });
 
+// ⭐⭐⭐ [PUT] 修改技能 (新增部分) ⭐⭐⭐
+app.put('/api/skills/:id', async (req, res) => {
+  try {
+    const { id } = req.params; // 获取 URL 里的 id
+    const { tool_name, status } = req.body; // 获取前端发来的新数据
+    
+    // 执行 SQL 更新命令
+    await pool.query(
+      'UPDATE skills SET tool_name = ?, status = ? WHERE id = ?', 
+      [tool_name, status, id]
+    );
+    
+    console.log(`已更新 ID 为 ${id} 的技能`);
+    // 返回更新后的数据给前端
+    res.json({ message: '更新成功', id, tool_name, status });
+  } catch (err) {
+    console.error("更新失败:", err);
+    res.status(500).json({ error: '更新失败' });
+  }
+});
+
 // [GET] 获取 MongoDB 新闻
 app.get('/api/news', async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
-        return res.json([]); // 如果没连上 Mongo，返回空数组
+        return res.json([]);
     }
     const news = await News.find().sort({ _id: -1 }).limit(10);
     res.json(news);
